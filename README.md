@@ -1,0 +1,1 @@
+to run: faust -A faustTest worker -l info
