@@ -8,7 +8,7 @@ import Record
 
 class Point(faust.Record, serializer='json'):
     ts: str
-    v: float
+    temp: float
     
 
 app = faust.App(
@@ -33,7 +33,7 @@ async def produce():
     for chunk in pd.read_csv('beachSampleData_Smaller.csv', chunksize=chunksize):
         d = Point("",0)
         for index, row in chunk.head().iterrows():
-             d = Point(row['Measurement Timestamp'],row['Air Temperature'])
+             d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'])
 
         await rawDataTopic.send(value=d)
         time.sleep(.0500)
