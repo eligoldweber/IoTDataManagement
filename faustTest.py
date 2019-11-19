@@ -44,6 +44,8 @@ async def processCompressData(cleanData):
     async for data in cleanData:
         db.put(bytes(str(data.id), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
         print(db.get(bytes(str(data.id), encoding= 'utf-8')))
+        stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+        print(stats)
 
 @app.task()
 async def produce():
@@ -54,6 +56,7 @@ async def produce():
         for index, row in chunk.head().iterrows():
              d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],id=i)
              i = i + 1
+             
 
         await rawDataTopic.send(value=d)
         time.sleep(.0500)
