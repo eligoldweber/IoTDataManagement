@@ -51,7 +51,7 @@ async def processCompressData(cleanData):
 async def produce():
     i = 0
     chunksize = 1
-    for chunk in pd.read_csv('beachSampleData_Smaller.csv', chunksize=chunksize):
+    for chunk in pd.read_csv('beachsampleRateData_Smaller.csv', chunksize=chunksize):
         d = Point("",0,0)
         for index, row in chunk.head().iterrows():
              d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],id=i)
