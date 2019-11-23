@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import math
 
 
-windowSize = 20
-k = .5
+windowSize = 35
+k = .9
 tMax = 20
 sampleRate = 1
 dfDynamic = pd.DataFrame(columns=['id','val','Rolling_Average','Rolling_STD','bb_UP','bb_DOWN','sampleRateRate'])
@@ -33,9 +33,9 @@ def main():
 
 	ax = plt.gca()
 	df.plot(kind='line',x='id',y='val',color='green',ax=ax,figsize=(25,10))
-	df.plot(kind='line',x='id',y='Rolling_Average',color='black',ax=ax,figsize=(15,10))
-	df.plot(kind='line',x='id',y='bb_UP',color='blue',ax=ax)
-	df.plot(kind='line',x='id',y='bb_DOWN',color='red',ax=ax)
+	df.plot(kind='line',x='id',y='Rolling_Average',color='black',ax=ax,alpha=0.75, figsize=(15,10))
+	df.plot(kind='line',x='id',y='bb_UP',color='blue',ax=ax,alpha=0.75)
+	df.plot(kind='line',x='id',y='bb_DOWN',color='red',ax=ax,alpha=0.75)
 	df.plot(kind='line',x='id',y='sampleRateRate',color='orange',ax=ax,alpha=0.5)
 	
 	plt.savefig('output.png')

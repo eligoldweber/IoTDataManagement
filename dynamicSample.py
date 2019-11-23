@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import math
 
 #Constants -- try changing them to see differences 
-windowSize = 20
-k = .5
+windowSize = 35
+k = .9
 tMax = 20
 phi = 2
 sampleRate = 1
@@ -77,7 +77,7 @@ def main():
 						sampleRate = math.ceil(rawsampleRate)
 					else:
 						sampleRate = round(rawsampleRate)
-					dfStats['sampleRateRate'] = sampleRate
+					dfStats['sampleRate'] = sampleRate
 					# Add new row to DF to keep track of total data (Used for diagram -- not needed in real life)
 					dfDynamic =dfDynamic.append(dfStats.tail(1))
 					df = df.drop(df.index[0])
