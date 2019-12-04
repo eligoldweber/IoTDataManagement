@@ -8,6 +8,8 @@ import Record
 import rocksdb
 import math
 import sys
+from datetime import datetime
+
 
 
 #Constants -- try changing them to see differences 
@@ -26,6 +28,15 @@ class Point(faust.Record, serializer='json'):
 	temp: float
 	rawId: int
 	uid: int
+	
+class CompressedPoint(faust.Record, serializer='json'):
+	ts: int
+	temp: float
+	flag: str
+	id: int
+
+	def __init__(self):
+	    pass
     
 app = faust.App(
     'node-data',
@@ -34,6 +45,8 @@ app = faust.App(
     store='rocksdb://',
 )
 
+LIMIT = 20
+currentBase = CompressedPoint() 
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
 CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer='json')
@@ -53,14 +66,40 @@ async def processCleanData(rawData):
         await CompressDataTopic.send(value=data)
         
         
+# @app.agent(CompressDataTopic)
+# async def processCompressData(cleanData):
+# 	async for data in cleanData:
+# 		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
+# 		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
+# 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+# 		print(stats)
+
 @app.agent(CompressDataTopic)
-async def processCompressData(cleanData):
+async def processCompressDataNew(cleanData):
+	CompressedData = CompressedPoint()
+	current = LIMIT
 	async for data in cleanData:
-		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
-		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
+		if current == LIMIT:
+			CompressedData.flag = 'B'
+			CompressedData.ts = currentBase.ts = convertDate(data.ts)
+			CompressedData.temp = currentBase.temp = data.temp
+		else:
+			CompressedData.flag = 'D'
+			CompressedData.ts = convertDate(data.ts) - currentBase.ts 
+			CompressedData.temp = data.temp - currentBase.temp
+
+		CompressedData.id = data.uid
+
+		db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+		print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 		print(stats)
 
+		if (current - 1) == 0:
+			current = LIMIT
+		else:
+			current = current - 1
+			
 @app.task()
 async def produce():
 	global sampleRate
@@ -135,7 +174,12 @@ class BackgroundService(Service):
 		print("Total count :: " + str(cnt))
 
 
-            
+'''06/22/2015 07:00:00 PM'''
+def convertDate (ts):
+	dt = datetime.strptime(ts,'%m/%d/%Y %I:%M:%S %p')
+	""" Return time in seconds"""
+	return dt.timestamp()
+	
             
 if __name__ == '__main__':
     app.main()
