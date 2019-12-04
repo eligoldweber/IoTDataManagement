@@ -7,6 +7,7 @@ import json
 import Record
 import rocksdb
 import math
+import sys
 
 
 #Constants -- try changing them to see differences 
@@ -36,7 +37,7 @@ app = faust.App(
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
 CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer='json')
-db = rocksdb.DB("rock.db", rocksdb.Options(create_if_missing=True))
+db = rocksdb.DB("test.db", rocksdb.Options(create_if_missing=True,num_levels=1,target_file_size_base=2048))
 
 @app.agent(rawDataTopic)
 async def processData(rawData):
@@ -54,11 +55,11 @@ async def processCleanData(rawData):
         
 @app.agent(CompressDataTopic)
 async def processCompressData(cleanData):
-    async for data in cleanData:
-        db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
-        print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
-        stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-        print(stats)
+	async for data in cleanData:
+		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
+		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
+		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+		print(stats)
 
 @app.task()
 async def produce():
