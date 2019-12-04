@@ -65,6 +65,7 @@ async def processCleanData(rawData):
         # print("Send to Compress")
         await CompressDataTopic.send(value=data)
         
+
         
 # @app.agent(CompressDataTopic)
 # async def processCompressData(cleanData):
@@ -73,6 +74,7 @@ async def processCleanData(rawData):
 # 		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
 # 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 # 		print(stats)
+
 
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
@@ -154,6 +156,7 @@ async def produce():
 @app.service
 class BackgroundService(Service):
 
+
 	async def on_start(self):
 		print('BACKGROUND SERVICE IS STARTING')
 		print('CURRENT Keys in DB:')
@@ -183,7 +186,6 @@ def convertDate (ts):
             
 if __name__ == '__main__':
     app.main()
-
 
 
 
