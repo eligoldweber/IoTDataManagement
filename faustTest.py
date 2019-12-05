@@ -10,8 +10,6 @@ import math
 import sys
 from datetime import datetime
 
-
-
 #Constants -- try changing them to see differences 
 windowSize = 35
 k = .9
@@ -38,7 +36,7 @@ class CompressedPoint(faust.Record, serializer='json'):
 	def __init__(self):
 	    pass
 
-class DeltaData (faust.Record, serializer='json'):
+class Delta (faust.Record, serializer='json'):
     def __init__(self, ts, temp):  
         self.ts = ts  
         self.temp = temp
@@ -50,6 +48,7 @@ app = faust.App(
     store='rocksdb://',
 )
 
+THRESHOLD = 20
 LIMIT = 20
 currentBase = CompressedPoint() 
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
@@ -95,19 +94,18 @@ async def processCompressDataNew(cleanData):
             id = id + 1
             delta = []
         else:
-            delta.append(DeltaData(convertDate(data.ts) - currentBase.ts,round(data.temp - currentBase.temp, 2)))
+            tmpts = convertDate(data.ts) - currentBase.ts
+            delta.append(Delta(tmpts,round(data.temp - currentBase.temp, 3)))
 
         if (current - 1) == 0:
             current = LIMIT
-            CompressedData.delta = delta
+            
             #zlib.compress(data, 3)
-            db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
-            print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
-            stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-            print(stats)
+            putInDB (CompressedData, delta)
         else:
             current = current - 1
-		
+    putInDB (CompressedData)
+            
 	
 @app.task()
 async def produce():
@@ -189,7 +187,13 @@ def convertDate (ts):
 	dt = datetime.strptime(ts,'%m/%d/%Y %I:%M:%S %p')
 	""" Return time in minutes"""
 	return dt.timestamp()/60
-	
+
+def putInDB (CompressedData, delta):
+    CompressedData.delta = delta
+    db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+    print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
+    stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+    print(stats)
             
 if __name__ == '__main__':
     app.main()
