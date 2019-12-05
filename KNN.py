@@ -4,7 +4,10 @@ from collections import OrderedDict
 from operator import itemgetter
 import math
 import random
-#import numpy as np
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-whitegrid')
+import numpy as np
+
 
 #local outlier factor
 #If lof > 1 then outlier. If lof ~ 1 same density as neighbors. If lof < 1, high density.
@@ -61,26 +64,23 @@ class KNN:
         def outlier(self,val):
                 if len(self.data) < self.k:
                         return False
-                return self.local_outlier_factor(val) > 1
+                comp = self.local_outlier_factor(val)
+                print(comp)
+                return comp > 2 # should change to 2
                         
-'''
-def main():
-        print("test")
-        knn = KNN()
-        for i in range(25):
-                rand1 = random.randint(0,100)
-                rand2 = random.randint(0,100)
-                knn.add_number([rand1,rand2])
-        print(knn.outlier([20,20]))
-        print(knn.outlier([50,50]))
-        print(knn.outlier([30,30]))
-        print(knn.outlier([10,10]))
-        print(knn.outlier([0,0]))
-'''
-        
 
-            
-            
+def main():
+	knn = KNN()
+	for i in range(25):
+		rand1 = random.randint(0,20)
+		rand2 = random.randint(0,20)
+		knn.add_number([rand1,rand2])
+		plt.plot(rand1, rand2, 'o', color='black');
+	for i in range(0,110,10):
+		print(knn.outlier([i,i]))
+		plt.plot(i, i, 'x', color='red');
+	plt.show()
+
 if __name__ == '__main__':
     main()
 
