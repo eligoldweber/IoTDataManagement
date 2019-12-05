@@ -9,6 +9,7 @@ import rocksdb
 import math
 import sys
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 
 
@@ -54,9 +55,60 @@ db = rocksdb.DB("test.db", rocksdb.Options(create_if_missing=True,num_levels=1,t
 
 @app.agent(rawDataTopic)
 async def processData(rawData):
+    global sampleRate
+    global dfDynamicSample
+    dfRaw = pd.DataFrame(columns=['id','tempVal'])
+    i = 0
+    uidCnt = 0
+    chunksize = 1
     async for data in rawData:
-        # print("Send to Clean")
-        await CleanDataTopic.send(value=data)
+		# Only 'save' data based on sampleRate (default is 1 ie every value is saved)
+        print("-----> " + str(sampleRate) + " :: processing " + str(data.uid))
+        if(i % sampleRate == 0):
+			# Currently only saving an 'id' and 1 value 'Air Temp' (Needs to be adjusted for bigger examples)
+            dfRaw.loc[i] = [i,data.temp]
+            if(len(dfRaw.index) >= windowSize):
+                # More robust df that calcuates meta data about rolling frame
+                dfStats = dfRaw.copy()
+                dfStats['Rolling_Average'] = dfStats.iloc[:,1].rolling(window=windowSize).mean()
+                dfStats['Rolling_STD'] = dfStats.iloc[:,1].rolling(window=windowSize).std()
+                dfStats['bb_UP'] = dfStats.iloc[:,2] + (k*dfStats.iloc[:,3])
+                dfStats['bb_DOWN'] = dfStats.iloc[:,2] - (k*dfStats.iloc[:,3])
+                #Calc distance between upper BB and lower BB to use in sampling rate
+                std = float(dfStats.tail(1)['Rolling_STD'])
+                up = float(dfStats.tail(1)['bb_UP'])
+                down = float(dfStats.tail(1)['bb_DOWN'])
+                dyn = round(2*k*std,4)
+                assert dyn == round(abs(up - down),4)
+                rawsampleRate = (tMax)/(1+pow(dyn,phi))
+                # Cant sample less than every data point, so rouind up
+                if(rawsampleRate < 1):
+                    sampleRate = math.ceil(rawsampleRate)
+                else:
+                    sampleRate = round(rawsampleRate)
+                    
+                dfStats['sampleRate'] = sampleRate
+                # Add new row to DF to keep track of total data (Used for diagram -- not needed in real life)
+                dfDynamicSample =dfDynamicSample.append(dfStats.tail(1))
+                dfRaw = dfRaw.drop(dfRaw.index[0])
+                data.uid = uidCnt
+                uidCnt = uidCnt +1 
+                await CleanDataTopic.send(value=data)
+                time.sleep(.050)
+            else:
+                data.uid = uidCnt
+                uidCnt = uidCnt +1
+                await CleanDataTopic.send(value=data)
+                time.sleep(.050)
+        i = i + 1
+    # axDynamic = plt.gca()
+#     dfDynamicSample.plot(kind='line',x='id',y='tempVal',color='green',ax=axDynamic,figsize=(25,10))
+#     dfDynamicSample.plot(kind='line',x='id',y='Rolling_Average',color='black',ax=axDynamic,figsize=(25,10))
+#     dfDynamicSample.plot(kind='line',x='id',y='bb_UP',color='blue',ax=axDynamic)
+#     dfDynamicSample.plot(kind='line',x='id',y='bb_DOWN',color='red',ax=axDynamic)
+#     dfDynamicSample.plot(kind='line',x='id',y='sampleRate',color='orange',ax=axDynamic,alpha=0.5)
+#
+#     plt.savefig('isItWorking.png')
 
 
 @app.agent(CleanDataTopic)
@@ -95,7 +147,7 @@ async def processCompressDataNew(cleanData):
 		db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
 		print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-		print(stats)
+        # print(stats)
 
 		if (current - 1) == 0:
 			current = LIMIT
@@ -104,53 +156,19 @@ async def processCompressDataNew(cleanData):
 			
 @app.task()
 async def produce():
-	global sampleRate
-	global dfDynamicSample
-	dfRaw = pd.DataFrame(columns=['id','tempVal'])
-	i = 0
-	uidCnt = 0
-	chunksize = 1
-	for chunk in pd.read_csv('beachSampleData.csv', chunksize=chunksize):
-		d = Point("",0,0,0)
-		for index, row in chunk.head().iterrows():
-			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],rawId=i,uid=uidCnt)
-			i = i + 1
-			# Only 'save' data based on sampleRate (default is 1 ie every value is saved)
-			if(i % sampleRate == 0):
-				# Currently only saving an 'id' and 1 value 'Air Temp' (Needs to be adjusted for bigger examples)
-				dfRaw.loc[i] = [i,row['Air Temperature']]
-				if(len(dfRaw.index) >= windowSize):
-					# More robust df that calcuates meta data about rolling frame
-					dfStats = dfRaw.copy()
-					dfStats['Rolling_Average'] = dfStats.iloc[:,1].rolling(window=windowSize).mean()
-					dfStats['Rolling_STD'] = dfStats.iloc[:,1].rolling(window=windowSize).std()
-					dfStats['bb_UP'] = dfStats.iloc[:,2] + (k*dfStats.iloc[:,3])
-					dfStats['bb_DOWN'] = dfStats.iloc[:,2] - (k*dfStats.iloc[:,3])
-					#Calc distance between upper BB and lower BB to use in sampling rate
-					std = float(dfStats.tail(1)['Rolling_STD'])
-					up = float(dfStats.tail(1)['bb_UP'])
-					down = float(dfStats.tail(1)['bb_DOWN'])
-					dyn = round(2*k*std,4)
-					assert dyn == round(abs(up - down),4)
-					rawsampleRate = (tMax)/(1+pow(dyn,phi))
-					# Cant sample less than every data point, so rouind up
-					if(rawsampleRate < 1):
-						sampleRate = math.ceil(rawsampleRate)
-					else:
-						sampleRate = round(rawsampleRate)
-					dfStats['sampleRate'] = sampleRate
-					# Add new row to DF to keep track of total data (Used for diagram -- not needed in real life)
-					dfDynamicSample =dfDynamicSample.append(dfStats.tail(1))
-					dfRaw = dfRaw.drop(dfRaw.index[0])
-					d.uid = uidCnt
-					uidCnt = uidCnt +1 
-					await rawDataTopic.send(value=d)
-					time.sleep(.050)
-				else:
-					d.uid = uidCnt
-					uidCnt = uidCnt +1
-					await rawDataTopic.send(value=d)
-					time.sleep(.050)
+    global sampleRate
+    global dfDynamicSample
+    dfRaw = pd.DataFrame(columns=['id','tempVal'])
+    i = 0
+    uidCnt = 0
+    chunksize = 1
+    for chunk in pd.read_csv('beachSampleData.csv', chunksize=chunksize):
+        d = Point("",0,0,0)
+        for index, row in chunk.head().iterrows():
+            d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],rawId=i,uid=i)
+            i = i + 1
+            await rawDataTopic.send(value=d)
+            time.sleep(.050)
             
 
 @app.service
