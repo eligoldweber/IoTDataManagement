@@ -10,6 +10,7 @@ import math
 import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
+import zlib
 from MAD import MAD
 from KNN import KNN
 
@@ -33,13 +34,19 @@ class Point(faust.Record, serializer='json'):
 	
 class CompressedPoint(faust.Record, serializer='json'):
 	ts: int
-	temp: float
-	flag: str
+	temp: int
 	id: int
-
+	delta = []
+	
 	def __init__(self):
-	    pass
-    
+		pass
+
+class Delta (faust.Record, serializer='json'):
+	def __init__(self, ts, temp):  
+		self.ts = ts  
+		self.temp = temp
+		
+		
 app = faust.App(
     'node-data',
     broker='kafka://localhost:9092',
@@ -47,7 +54,8 @@ app = faust.App(
     store='rocksdb://',
 )
 
-LIMIT = 20
+THRESHOLD = 5 #length difference in B+D to start new B
+LIMIT = 20 # Upper bound for B+D
 currentBase = CompressedPoint() 
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
@@ -149,27 +157,32 @@ async def processCleanData(rawData):
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
 	CompressedData = CompressedPoint()
-	current = LIMIT
+	current = 1
+	id = 1
+	delta = []
+
 	async for data in cleanData:
-		if current == LIMIT:
-			CompressedData.flag = 'B'
+		if id == 1:
 			CompressedData.ts = currentBase.ts = convertDate(data.ts)
 			CompressedData.temp = currentBase.temp = data.temp
+			CompressedData.id = id
+			id = id + 1
+			delta = []
+			print(len(str(convertDate(data.ts) - currentBase.ts)))
+		elif len(str(convertDate(data.ts) - currentBase.ts)) > THRESHOLD or current == LIMIT:
+			putInDB(CompressedData,delta)
+			CompressedData.ts = currentBase.ts = convertDate(data.ts)
+			CompressedData.temp = currentBase.temp = data.temp
+			CompressedData.id = id
+			id = id + 1
+			delta = []
+			current = 1
 		else:
-			CompressedData.flag = 'D'
-			CompressedData.ts = convertDate(data.ts) - currentBase.ts 
-			CompressedData.temp = data.temp - currentBase.temp
+			tmpts = convertDate(data.ts) - currentBase.ts
+			delta.append(Delta(tmpts,round(data.temp - currentBase.temp, 3)))
+			current = current + 1
 
-		CompressedData.id = data.uid
-		db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
-		print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
-		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-        # print(stats)
-
-		if (current - 1) == 0:
-			current = LIMIT
-		else:
-			current = current - 1
+	putInDB(CompressedData,delta)
 			
 @app.task()
 async def produce():
@@ -215,8 +228,17 @@ class BackgroundService(Service):
 '''06/22/2015 07:00:00 PM'''
 def convertDate (ts):
 	dt = datetime.strptime(ts,'%m/%d/%Y %I:%M:%S %p')
-	""" Return time in seconds"""
-	return dt.timestamp()
+	""" Return time in minutes"""
+	return dt.timestamp()/60
+	
+def putInDB (CompressedData, delta):
+	CompressedData.delta = delta
+	data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
+	db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+	#db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
+	print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
+	stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+	print(stats)
 	
             
 if __name__ == '__main__':
