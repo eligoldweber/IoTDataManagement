@@ -38,7 +38,7 @@ class CompressedPoint(faust.Record, serializer='json'):
 	def __init__(self):
 	    pass
 
-class DeltaData:  
+class DeltaData (faust.Record, serializer='json'):
     def __init__(self, ts, temp):  
         self.ts = ts  
         self.temp = temp
@@ -100,6 +100,7 @@ async def processCompressDataNew(cleanData):
         if (current - 1) == 0:
             current = LIMIT
             CompressedData.delta = delta
+            #zlib.compress(data, 3)
             db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
             print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
             stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
