@@ -6,8 +6,10 @@ import time
 import json
 import Record
 import rocksdb
+import binascii
 import math
 import sys
+import zlib
 from datetime import datetime
 
 #Constants -- try changing them to see differences 
@@ -23,13 +25,13 @@ dfDynamicSample = pd.DataFrame(columns=['id','tempVal','Rolling_Average','Rollin
 
 class Point(faust.Record, serializer='json'):
 	ts: str
-	temp: float
+	temp: int
 	rawId: int
 	uid: int
 	
 class CompressedPoint(faust.Record, serializer='json'):
 	ts: int
-	temp: float
+	temp: int
 	id: int
 	delta = []
 
@@ -48,7 +50,7 @@ app = faust.App(
     store='rocksdb://',
 )
 
-THRESHOLD = 20
+THRESHOLD = 6
 LIMIT = 20
 currentBase = CompressedPoint() 
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
@@ -83,27 +85,31 @@ async def processCleanData(rawData):
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
     CompressedData = CompressedPoint()
-    current = LIMIT
+    current = 1
     id = 1
     delta = []
+    
     async for data in cleanData:
-        if current == LIMIT:
+        if id == 1:
             CompressedData.ts = currentBase.ts = convertDate(data.ts)
             CompressedData.temp = currentBase.temp = data.temp
             CompressedData.id = id
             id = id + 1
             delta = []
+            print(len(str(convertDate(data.ts) - currentBase.ts)))
+        elif len(str(convertDate(data.ts) - currentBase.ts)) > THRESHOLD or current == LIMIT:
+            putInDB(CompressedData,delta)
+            CompressedData.ts = currentBase.ts = convertDate(data.ts)
+            CompressedData.temp = currentBase.temp = data.temp
+            CompressedData.id = id
+            id = id + 1
+            delta = []
+            current = 1
         else:
             tmpts = convertDate(data.ts) - currentBase.ts
             delta.append(Delta(tmpts,round(data.temp - currentBase.temp, 3)))
-
-        if (current - 1) == 0:
-            current = LIMIT
-            
-            #zlib.compress(data, 3)
-            putInDB (CompressedData, delta)
-        else:
-            current = current - 1
+            current = current + 1
+        
     putInDB (CompressedData)
             
 	
@@ -190,7 +196,9 @@ def convertDate (ts):
 
 def putInDB (CompressedData, delta):
     CompressedData.delta = delta
+    data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
     db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+    #db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
     print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
     stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
     print(stats)
