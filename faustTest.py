@@ -10,7 +10,8 @@ import math
 import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
-
+from MAD.py import MAD
+from KNN.py import KNN
 
 
 #Constants -- try changing them to see differences 
@@ -113,10 +114,27 @@ async def processData(rawData):
 
 @app.agent(CleanDataTopic)
 async def processCleanData(rawData):
+    knn = KNN()
+    #mad = MAD()
     async for data in rawData:
         # print("Send to Compress")
-        await CompressDataTopic.send(value=data)
+        # data is a point
         
+        # with KNN
+        val = [data.temp]
+        knn.add_number(val)
+        if len(knn.data) < knn.k:
+            await CompressDataTopic.send(value=data)
+        else:
+            if(not knn.outlier(val)):
+                await CompressDataTopic.send(value=data)
+        
+'''
+        #with MAD detection
+        if not mad.outlier(data.temp):
+            mad.add_number(data.temp)
+            await CompressDataTopic.send(value=data)
+'''
 
         
 # @app.agent(CompressDataTopic)
