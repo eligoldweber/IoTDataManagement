@@ -49,6 +49,8 @@ class KNN:
                 for x in neighbors:
                         total += self.reach_distance(a,x[0])
                 total = total / self.k
+                if(total == 0):
+                    return .01
                 lrd = 1 / total
                 return lrd
 
@@ -65,21 +67,21 @@ class KNN:
                 if len(self.data) < self.k:
                         return False
                 comp = self.local_outlier_factor(val)
-                print(comp)
-                return comp > 2 # should change to 2
+                # print(comp)
+                return comp > 1.5 # should change to 2
                         
 
-def main():
-	knn = KNN()
-	for i in range(25):
-		rand1 = random.randint(0,20)
-		rand2 = random.randint(0,20)
-		knn.add_number([rand1,rand2])
-		plt.plot(rand1, rand2, 'o', color='black');
-	for i in range(0,110,10):
-		print(knn.outlier([i,i]))
-		plt.plot(i, i, 'x', color='red');
-	plt.show()
+# def main():
+#     knn = KNN()
+#     for i in range(25):
+#         rand1 = random.randint(0,20)
+#         rand2 = random.randint(0,20)
+#         knn.add_number([rand1,rand2])
+#         plt.plot(rand1, rand2, 'o', color='black');
+#     for i in range(0,110,10):
+#         print(knn.outlier([i,i]))
+#         plt.plot(i, i, 'x', color='red');
+#     plt.show()
 
 if __name__ == '__main__':
     main()

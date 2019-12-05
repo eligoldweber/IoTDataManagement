@@ -10,8 +10,8 @@ import math
 import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
-from MAD.py import MAD
-from KNN.py import KNN
+from MAD import MAD
+from KNN import KNN
 
 
 #Constants -- try changing them to see differences 
@@ -53,6 +53,8 @@ rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
 CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer='json')
 db = rocksdb.DB("test.db", rocksdb.Options(create_if_missing=True,num_levels=1,target_file_size_base=2048))
+knn = KNN()
+mad = MAD()
 
 @app.agent(rawDataTopic)
 async def processData(rawData):
@@ -64,7 +66,7 @@ async def processData(rawData):
     chunksize = 1
     async for data in rawData:
 		# Only 'save' data based on sampleRate (default is 1 ie every value is saved)
-        print("-----> " + str(sampleRate) + " :: processing " + str(data.uid))
+        # print("-----> " + str(sampleRate) + " :: processing " + str(data.uid))
         if(i % sampleRate == 0):
 			# Currently only saving an 'id' and 1 value 'Air Temp' (Needs to be adjusted for bigger examples)
             dfRaw.loc[i] = [i,data.temp]
@@ -114,27 +116,25 @@ async def processData(rawData):
 
 @app.agent(CleanDataTopic)
 async def processCleanData(rawData):
-    knn = KNN()
-    #mad = MAD()
-    async for data in rawData:
+	global knn
+	global mad
+	async for data in rawData:
         # print("Send to Compress")
         # data is a point
         
-        # with KNN
-        val = [data.temp]
-        knn.add_number(val)
-        if len(knn.data) < knn.k:
-            await CompressDataTopic.send(value=data)
-        else:
-            if(not knn.outlier(val)):
-                await CompressDataTopic.send(value=data)
-        
-'''
-        #with MAD detection
-        if not mad.outlier(data.temp):
-            mad.add_number(data.temp)
-            await CompressDataTopic.send(value=data)
-'''
+        # # with KNN
+ #        val = [data.temp]
+ #        knn.add_number(val)
+ #        if len(knn.data) < knn.k:
+ #            await CompressDataTopic.send(value=data)
+ #        else:
+ #            if(not knn.outlier(val)):
+ #                await CompressDataTopic.send(value=data)
+		#with MAD detection
+		mad.add_number(data.temp)
+		if not mad.outlier(data.temp):
+			await CompressDataTopic.send(value=data)
+
 
         
 # @app.agent(CompressDataTopic)
@@ -161,7 +161,6 @@ async def processCompressDataNew(cleanData):
 			CompressedData.temp = data.temp - currentBase.temp
 
 		CompressedData.id = data.uid
-
 		db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
 		print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)

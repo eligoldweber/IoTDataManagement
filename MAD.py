@@ -31,9 +31,9 @@ class MAD:
 	def nlogn_median(self,l):
 		l = sorted(l)
 		if len(l) % 2 == 1:
-			return l[len(l) / 2]
+			return l[int(len(l) / 2)]
 		else:
-			return 0.5 * (l[len(l) / 2 - 1] + l[len(l) / 2])
+			return 0.5 * (l[int(len(l) / 2 - 1)] + l[int(len(l) / 2)])
 
 	def chunked(self,l, chunk_size):
 		return [l[i:i + chunk_size] for i in range(0, len(l), chunk_size)]
@@ -51,7 +51,7 @@ class MAD:
 
 	def quickselect(self,l, k):
 		if len(l) == 1:
-			assert k == 0
+            # assert k == 0
 			return l[0]
 		pivot = self.pick_pivot(l)
 		lows = [el for el in l if el < pivot]
