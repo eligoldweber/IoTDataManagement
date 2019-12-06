@@ -40,33 +40,33 @@ class DSample:
 					self.sampleRate = round(rawsampleRate)
 				dfStats['sampleRate'] = self.sampleRate
 				self.dfRaw = self.dfRaw.drop(self.dfRaw.index[0])
-				tuplePoint =(self.uid,val)
+				tuplePoint =(1,self.uid,val)
 				# data.uid = uidCnt
 				self.uid = self.uid + 1
 				self.rawCount = self.rawCount + 1;
 				return tuplePoint
 			else:
-				tuplePoint =(self.uid,val)
+				tuplePoint =(1,self.uid,val)
 				self.uid = self.uid +1
 				self.rawCount = self.rawCount + 1;
 				return tuplePoint
 				
 		self.rawCount = self.rawCount + 1;
-		return False
+		return (0,self.rawCount,val)
 
 
-def main():
-	sample = DSample(1,.9,20,5,2)
-	print(sample.tMax)
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5888))
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5))
-	print(sample.add_val(1,5888))
+# def main():
+# 	sample = DSample(1,.9,20,5,2)
+# 	print(sample.tMax)
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5888))
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5))
+# 	print(sample.add_val(1,5888))
 
             
             

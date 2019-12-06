@@ -29,6 +29,7 @@ dfDynamicSample = pd.DataFrame(columns=['id','tempVal','Rolling_Average','Rollin
 class Point(faust.Record, serializer='json'):
 	ts: str
 	temp: float
+	wind: float
 	rawId: int
 	uid: int
 	
@@ -55,7 +56,7 @@ app = faust.App(
 )
 SAMPLE_PASS = False
 CLEAN_PASS = False
-COMPRESS_PASS = False
+COMPRESS_PASS = True
 THRESHOLD = 5 #length difference in B+D to start new B
 LIMIT = 20 # Upper bound for B+D
 currentBase = CompressedPoint() 
@@ -65,29 +66,29 @@ CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer=
 db = rocksdb.DB("test.db", rocksdb.Options(create_if_missing=True,num_levels=1,target_file_size_base=2048))
 knn = KNN()
 mad = MAD()
+tempSampler = DSample(sampleRate,k,tMax,windowSize,phi)
+windSampler = DSample(sampleRate,k,tMax,windowSize,phi)
 
 
 @app.agent(rawDataTopic)
 async def processData(rawData):
-	global sampleRate
-	global dfDynamicSample
-	dfRaw = pd.DataFrame(columns=['id','tempVal'])
 	i = 0
-	uidCnt = 0
-	chunksize = 1
-	dsample1 = DSample(sampleRate,k,tMax,windowSize,phi)
+	global tempSample
+	global windSample
 	async for data in rawData:
 		if(SAMPLE_PASS):
 			await CleanDataTopic.send(value=data)
 		else:
-			sampled = dsample1.add_val(data.uid,data.temp)
-			if(sampled):
-				data.uid = sampled[0]
-				data.temp = sampled[1]
+			sampledTemp = tempSampler.add_val(data.uid,data.temp)
+			sampledWind = windSampler.add_val(data.uid,data.wind)
+			if(sampledWind[0] or sampledTemp[0]):
+				data.uid = i
+				data.temp = sampledTemp[2]
+				data.wind = sampledWind[2]
 				await CleanDataTopic.send(value=data)
-				time.sleep(.050)
-
-
+				i = i + 1
+				time.sleep(.005)
+			
 
 @app.agent(CleanDataTopic)
 async def processCleanData(rawData):
@@ -101,17 +102,17 @@ async def processCleanData(rawData):
 		    # data is a point
     
 		    # # with KNN
-		#        val = [data.temp]
-		#        knn.add_number(val)
-		#        if len(knn.data) < knn.k:
-		#            await CompressDataTopic.send(value=data)
-		#        else:
-		#            if(not knn.outlier(val)):
-		#                await CompressDataTopic.send(value=data)
-			#with MAD detection
-			mad.add_number(data.temp)
-			if not mad.outlier(data.temp):
+			val = [data.temp,data.wind]
+			knn.add_number(val)
+			if len(knn.data) < knn.k:
 				await CompressDataTopic.send(value=data)
+			else:
+				if(not knn.outlier(val)):
+				   await CompressDataTopic.send(value=data)
+			#with MAD detection
+			# mad.add_number(data.temp)
+# 			if not mad.outlier(data.temp):
+# 				await CompressDataTopic.send(value=data)
 
 
 @app.agent(CompressDataTopic)
@@ -126,7 +127,7 @@ async def processCompressDataNew(cleanData):
 			db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
 			print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
 			stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-			print(stats)
+			# print(stats)
 		else:
 			if id == 1:
 				CompressedData.ts = currentBase.ts = convertDate(data.ts)
@@ -152,15 +153,15 @@ async def processCompressDataNew(cleanData):
 			
 @app.task()
 async def produce():
-    i = 0
-    chunksize = 1
-    for chunk in pd.read_csv('beachSampleData.csv', chunksize=chunksize):
-        d = Point("",0,0,0)
-        for index, row in chunk.head().iterrows():
-            d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],rawId=i,uid=i)
-            i = i + 1
-            await rawDataTopic.send(value=d)
-            time.sleep(.050)
+	chunksize = 1
+	i = 0
+	for chunk in pd.read_csv('beachSampleDataMulti.csv', chunksize=chunksize):
+		d = Point("",0,0,0,0)
+		for index, row in chunk.head().iterrows():
+			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['wind'],rawId=i,uid=i)
+			i = i + 1
+			await rawDataTopic.send(value=d)
+			time.sleep(.005)
             
 
 @app.service
