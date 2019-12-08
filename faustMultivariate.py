@@ -15,16 +15,21 @@ from MAD import MAD
 from KNN import KNN
 from DSample import DSample 
 
-#Constants -- try changing them to see differences 
+# Dynamic Sample Constants -- try changing them to see differences 
 windowSize = 35
 k = .9
 tMax = 20
 phi = 2
 sampleRate = 1
+SAMPLE_PASS = True
+CLEAN_PASS = True
+COMPRESS_PASS = True
+ZLIB_COMPRESS = False
+THRESHOLD = 50 # %difference in the length
+LIMIT = 20 # Upper bound for B+D
 
-
-dfDynamicSample = pd.DataFrame(columns=['id','tempVal','Rolling_Average','Rolling_STD','bb_UP','bb_DOWN','sampleRate'])
-
+#Analysis
+totalBytes = 0;
 
 class Point(faust.Record, serializer='json'):
 	ts: str
@@ -62,12 +67,7 @@ app = faust.App(
     key_serializer='json',
     store='rocksdb://',
 )
-SAMPLE_PASS = False
-CLEAN_PASS = False
-COMPRESS_PASS = False
-ZLIB_COMPRESS = False
-THRESHOLD = 50 # %difference in the length
-LIMIT = 20 # Upper bound for B+D
+
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
 CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer='json')
@@ -125,6 +125,7 @@ async def processCleanData(rawData):
 
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
+	global totalBytes
 	currentBase = data = CompressedData = Point("",0,0,0,0)
 	current = id = 1
 	delta = []
@@ -132,6 +133,7 @@ async def processCompressDataNew(cleanData):
 	async for data in cleanData:
 		if(COMPRESS_PASS):
 			db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
+			totalBytes = totalBytes + sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8'))
 			print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
 			stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 		else:
@@ -151,7 +153,7 @@ async def processCompressDataNew(cleanData):
 				delta.append(data-currentBase)
 				current = current + 1
 
-	putInDB(CompressedData,delta)
+			putInDB(CompressedData,delta)
 			
 @app.task()
 async def produce():
@@ -178,6 +180,7 @@ class BackgroundService(Service):
 		print (list(it))
 		
 	async def on_stop(self):
+		global totalBytes
 		print('BACKGROUNDSERVICE IS STOPPING')
 		cnt = 0
 		it = db.iterkeys()
@@ -186,7 +189,8 @@ class BackgroundService(Service):
 			print("Deleteing: {0}".format(k))
 			db.delete(k)
 			cnt = cnt +1
-		print("Total count :: " + str(cnt))
+		print("Total entries in DB :: " + str(cnt))
+		print("Total Bytes stored = " + str(totalBytes))
 
 
 '''06/22/2015 07:00:00 PM'''
@@ -196,12 +200,15 @@ def convertDate (ts):
 	return dt.timestamp()/60
 	
 def putInDB (CompressedData, delta):
+	global totalBytes
 	CompressedData['Delta'] = delta
 	if ZLIB_COMPRESS:
 		data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
-		db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
+		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
+		totalBytes = totalBytes + sys.getsizeof(bytes(str(data), encoding= 'utf-8'))
 	else:
 		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+		totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData), encoding= 'utf-8'))
 	print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
 	stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 	print(stats)
