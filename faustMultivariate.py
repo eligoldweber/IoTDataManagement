@@ -21,15 +21,15 @@ k = .9
 tMax = 20
 phi = 2
 sampleRate = 1
-SAMPLE_PASS = True
-CLEAN_PASS = True
-COMPRESS_PASS = True
-ZLIB_COMPRESS = False
+SAMPLE_PASS = False
+CLEAN_PASS = False
+COMPRESS_PASS = False
+ZLIB_COMPRESS = True
 THRESHOLD = 50 # %difference in the length
 LIMIT = 20 # Upper bound for B+D
 
 #Analysis
-totalBytes = 0;
+totalBytes = 0
 
 class Point(faust.Record, serializer='json'):
 	ts: str
@@ -71,6 +71,7 @@ app = faust.App(
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
 CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer='json')
+NoCompressDataTopic = app.topic('non-compress-data',value_type=Point,value_serializer='json')
 db = rocksdb.DB("test.db", rocksdb.Options(create_if_missing=True,num_levels=1,target_file_size_base=2048))
 knn = KNN()
 mad = MAD()
@@ -116,7 +117,10 @@ async def processCleanData(rawData):
 				await CompressDataTopic.send(value=data)
 			else:
 				if(not knn.outlier(val)):
-				   await CompressDataTopic.send(value=data)
+					if(COMPRESS_PASS):
+						await NoCompressDataTopic.send(value=data)
+					else:
+						await CompressDataTopic.send(value=data)
 			#with MAD detection
 			# mad.add_number(data.temp)
 # 			if not mad.outlier(data.temp):
@@ -131,38 +135,42 @@ async def processCompressDataNew(cleanData):
 	delta = []
 
 	async for data in cleanData:
-		if(COMPRESS_PASS):
-			db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
-			totalBytes = totalBytes + sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8'))
-			print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
-			stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-		else:
-			if id == 1:
-				CompressedData = currentBase = copydata(data)				
-				CompressedData['id'] = id
-				id = id + 1
-				delta = []
-			elif ((checkThreshold(currentBase,data) and current > LIMIT/2) or current == LIMIT):
-				putInDB(CompressedData,delta)
-				CompressedData = currentBase = copydata(data)				
-				CompressedData['id'] = id
-				id = id + 1
-				delta = []
-				current = 1
-			else:
-				delta.append(data-currentBase)
-				current = current + 1
-
+		if id == 1:
+			CompressedData = currentBase = copydata(data)				
+			CompressedData['id'] = id
+			id = id + 1
+			delta = []
+		elif ((checkThreshold(currentBase,data) and current > LIMIT/2) or current == LIMIT):
 			putInDB(CompressedData,delta)
-			
+			CompressedData = currentBase = copydata(data)				
+			CompressedData['id'] = id
+			id = id + 1
+			delta = []
+			current = 1
+		else:
+			delta.append(data-currentBase)
+			current = current + 1
+
+	putInDB(CompressedData,delta)
+		
+@app.agent(NoCompressDataTopic)
+async def processNoCompressDataNew(cleanData):
+	global totalBytes
+	async for data in cleanData:
+		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
+		print(sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8')))
+		totalBytes = totalBytes + sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8'))
+		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
+		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+		
 @app.task()
 async def produce():
 	chunksize = 1
 	i = 0
-	for chunk in pd.read_csv('./dataSets/BeachWeatherStations63rdSt_FULL.csv', chunksize=chunksize):
+	for chunk in pd.read_csv('./dataSets/beachSampleDataMulti.csv', chunksize=chunksize):
 		d = Point("",0,0,0,0)
 		for index, row in chunk.head().iterrows():
-			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['Wind Speed'],rawId=i,uid=i)
+			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['wind'],rawId=i,uid=i)
 			i = i + 1
 			await rawDataTopic.send(value=d)
 			time.sleep(.005)
@@ -176,6 +184,8 @@ class BackgroundService(Service):
 		print('CURRENT Keys in DB:')
 		it = db.iterkeys()
 		it.seek_to_first()
+		for k in list(it):
+			db.delete(k)
 		# prints [b'key1', b'key2', b'key3']
 		print (list(it))
 		
@@ -206,6 +216,7 @@ def putInDB (CompressedData, delta):
 		data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
 		totalBytes = totalBytes + sys.getsizeof(bytes(str(data), encoding= 'utf-8'))
+		print(sys.getsizeof(bytes(str(data), encoding= 'utf-8')))
 	else:
 		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
 		totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData), encoding= 'utf-8'))
