@@ -33,20 +33,28 @@ class Point(faust.Record, serializer='json'):
 	rawId: int
 	uid: int
 	
+	def __sub__(self, other):
+		data = {}
+		for attr, value in self.__dict__.items():
+			if attr == 'uid' or attr == 'rawId':
+				pass
+			elif attr == 'ts':
+				data[attr] = str(convertDate(getattr(self,attr)) - float(other[attr]))
+			elif isinstance(value, float):
+				data[attr] = round( getattr(self,attr) - other[attr] , 2)
+			else:
+				data[attr] = getattr(self,attr) - other[attr]
+		return data
+
 class CompressedPoint(faust.Record, serializer='json'):
-	ts: int
+	ts: str
 	temp: int
+	wind: float
 	id: int
 	delta = []
 	
 	def __init__(self):
 		pass
-
-class Delta (faust.Record, serializer='json'):
-	def __init__(self, ts, temp):  
-		self.ts = ts  
-		self.temp = temp
-		
 		
 app = faust.App(
     'node-data',
@@ -56,10 +64,10 @@ app = faust.App(
 )
 SAMPLE_PASS = False
 CLEAN_PASS = False
-COMPRESS_PASS = True
-THRESHOLD = 5 #length difference in B+D to start new B
+COMPRESS_PASS = False
+ZLIB_COMPRESS = False
+THRESHOLD = 50 # %difference in the length
 LIMIT = 20 # Upper bound for B+D
-currentBase = CompressedPoint() 
 rawDataTopic = app.topic('nodeInput',value_type=Point,value_serializer='json')
 CleanDataTopic = app.topic('clean-data',value_type=Point,value_serializer='json')
 CompressDataTopic = app.topic('compress-data',value_type=Point,value_serializer='json')
@@ -117,9 +125,8 @@ async def processCleanData(rawData):
 
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
-	CompressedData = CompressedPoint()
-	current = 1
-	id = 1
+	currentBase = data = CompressedData = Point("",0,0,0,0)
+	current = id = 1
 	delta = []
 
 	async for data in cleanData:
@@ -127,29 +134,24 @@ async def processCompressDataNew(cleanData):
 			db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
 			print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
 			stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-			# print(stats)
 		else:
 			if id == 1:
-				CompressedData.ts = currentBase.ts = convertDate(data.ts)
-				CompressedData.temp = currentBase.temp = data.temp
-				CompressedData.id = id
+				CompressedData = currentBase = copydata(data)				
+				CompressedData['id'] = id
 				id = id + 1
 				delta = []
-				print(len(str(convertDate(data.ts) - currentBase.ts)))
-			elif len(str(convertDate(data.ts) - currentBase.ts)) > THRESHOLD or current == LIMIT:
+			elif ((checkThreshold(currentBase,data) and current > LIMIT/2) or current == LIMIT):
 				putInDB(CompressedData,delta)
-				CompressedData.ts = currentBase.ts = convertDate(data.ts)
-				CompressedData.temp = currentBase.temp = data.temp
-				CompressedData.id = id
+				CompressedData = currentBase = copydata(data)				
+				CompressedData['id'] = id
 				id = id + 1
 				delta = []
 				current = 1
 			else:
-				tmpts = convertDate(data.ts) - currentBase.ts
-				delta.append(Delta(tmpts,round(data.temp - currentBase.temp, 3)))
+				delta.append(data-currentBase)
 				current = current + 1
 
-			putInDB(CompressedData,delta)
+	putInDB(CompressedData,delta)
 			
 @app.task()
 async def produce():
@@ -166,7 +168,6 @@ async def produce():
 
 @app.service
 class BackgroundService(Service):
-
 
 	async def on_start(self):
 		print('BACKGROUND SERVICE IS STARTING')
@@ -195,17 +196,36 @@ def convertDate (ts):
 	return dt.timestamp()/60
 	
 def putInDB (CompressedData, delta):
-	CompressedData.delta = delta
-	data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
-	db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
-	#db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
-	print(db.get(bytes(str(CompressedData.id), encoding= 'utf-8')))
+	CompressedData['Delta'] = delta
+	if ZLIB_COMPRESS:
+		data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
+		db.put(bytes(str(CompressedData.id), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
+	else:
+		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+	print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
 	stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 	print(stats)
-	
-            
+
+def checkThreshold(currentBase,data):
+	for attr, value in data.__dict__.items():
+		delta = data - currentBase
+		#if attr != 'uid' and attr != 'rawId':
+		if attr == 'ts':
+			if len(str(delta[attr])) > (THRESHOLD/100) * len(str(currentBase[attr])):
+				return True
+	return False
+   
+def copydata(data):
+	compressed = {}
+	for attr, value in data.__dict__.items():
+		if attr != 'uid' and attr != 'rawId':
+			if attr == 'ts':
+				compressed[attr] = str(convertDate(getattr(data,attr)))
+			else:	
+				compressed[attr] = getattr(data,attr)			
+	return compressed
+         
 if __name__ == '__main__':
     app.main()
-
 
 
