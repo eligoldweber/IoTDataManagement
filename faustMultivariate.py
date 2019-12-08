@@ -105,7 +105,10 @@ async def processCleanData(rawData):
 	global mad
 	async for data in rawData:
 		if(CLEAN_PASS):
-			await CompressDataTopic.send(value=data)
+			if(COMPRESS_PASS):
+				await NoCompressDataTopic.send(value=data)
+			else:
+				await CompressDataTopic.send(value=data)
 		else:
 		    # print("Send to Compress")
 		    # data is a point
@@ -167,10 +170,10 @@ async def processNoCompressDataNew(cleanData):
 async def produce():
 	chunksize = 1
 	i = 0
-	for chunk in pd.read_csv('./dataSets/beachSampleDataMulti.csv', chunksize=chunksize):
+	for chunk in pd.read_csv('./dataSets/BeachMulti1000.csv', chunksize=chunksize):
 		d = Point("",0,0,0,0)
 		for index, row in chunk.head().iterrows():
-			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['wind'],rawId=i,uid=i)
+			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['Wind Speed'],rawId=i,uid=i)
 			i = i + 1
 			await rawDataTopic.send(value=d)
 			time.sleep(.005)
