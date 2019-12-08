@@ -159,10 +159,10 @@ async def processCompressDataNew(cleanData):
 async def produce():
 	chunksize = 1
 	i = 0
-	for chunk in pd.read_csv('beachSampleDataMulti.csv', chunksize=chunksize):
+	for chunk in pd.read_csv('./dataSets/BeachWeatherStations63rdSt_FULL.csv', chunksize=chunksize):
 		d = Point("",0,0,0,0)
 		for index, row in chunk.head().iterrows():
-			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['wind'],rawId=i,uid=i)
+			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['Wind Speed'],rawId=i,uid=i)
 			i = i + 1
 			await rawDataTopic.send(value=d)
 			time.sleep(.005)
