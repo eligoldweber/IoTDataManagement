@@ -21,10 +21,11 @@ k = .9
 tMax = 20
 phi = 2
 sampleRate = 1
-SAMPLE_PASS = True
-CLEAN_PASS = True
-COMPRESS_PASS = True
-ZLIB_COMPRESS = False
+SAMPLE_PASS = False
+CLEAN_PASS = False
+COMPRESS_PASS = False
+ZLIB_COMPRESS = True
+GRAPH = False
 THRESHOLD = 50 # %difference in the length
 LIMIT = 20 # Upper bound for B+D
 
@@ -45,7 +46,7 @@ class Point(faust.Record, serializer='json'):
 			if attr == 'uid' or attr == 'rawId':
 				pass
 			elif attr == 'ts':
-				data[attr] = str(convertDate(getattr(self,attr)) - int(other[attr]))
+				data[attr] = str(convertDate(getattr(self,attr)) - float(other[attr]))
 			elif isinstance(value, float):
 				data[attr] = round( getattr(self,attr) - other[attr] , 2)
 			else:
@@ -187,7 +188,9 @@ class BackgroundService(Service):
 		
 	async def on_stop(self):
 		global totalBytes
-		graphDataFromDB()
+		global entriesInDB
+		if GRAPH:
+			graphDataFromDB()
 		print('BACKGROUNDSERVICE IS STOPPING')
 		cnt = 0
 		it = db.iterkeys()
@@ -196,7 +199,7 @@ class BackgroundService(Service):
 			print("Deleteing: {0}".format(k))
 			db.delete(k)
 			cnt = cnt +1
-		print("Total entries in DB :: " + str(cnt))
+		print("Total entries in DB :: " + str(entriesInDB))
 		print("Total Bytes stored = " + str(totalBytes))
 
 
@@ -215,7 +218,7 @@ def putInDB (CompressedData, delta):
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
-			print(sys.getsizeof(bytes(str(data), encoding= 'utf-8')))
+			print(sys.getsizeof(bytes(data)))
 		else:
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(CompressedData))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
