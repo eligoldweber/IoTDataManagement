@@ -23,13 +23,14 @@ phi = 2
 sampleRate = 1
 SAMPLE_PASS = False
 CLEAN_PASS = False
-COMPRESS_PASS = False
-ZLIB_COMPRESS = True
+COMPRESS_PASS = True
+ZLIB_COMPRESS = False
 THRESHOLD = 50 # %difference in the length
 LIMIT = 20 # Upper bound for B+D
 
 #Analysis
 totalBytes = 0
+entriesInDB = 0
 
 class Point(faust.Record, serializer='json'):
 	ts: str
@@ -159,10 +160,12 @@ async def processCompressDataNew(cleanData):
 @app.agent(NoCompressDataTopic)
 async def processNoCompressDataNew(cleanData):
 	global totalBytes
+	global entriesInDB
 	async for data in cleanData:
 		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
 		print(sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8')))
 		totalBytes = totalBytes + sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8'))
+		entriesInDB = entriesInDB + 1
 		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 		
@@ -194,6 +197,7 @@ class BackgroundService(Service):
 		
 	async def on_stop(self):
 		global totalBytes
+		graphDataFromDB()
 		print('BACKGROUNDSERVICE IS STOPPING')
 		cnt = 0
 		it = db.iterkeys()
@@ -213,19 +217,22 @@ def convertDate (ts):
 	return dt.timestamp()/60
 	
 def putInDB (CompressedData, delta):
-	global totalBytes
-	CompressedData['Delta'] = delta
-	if ZLIB_COMPRESS:
-		data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
-		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
-		totalBytes = totalBytes + sys.getsizeof(bytes(str(data), encoding= 'utf-8'))
-		print(sys.getsizeof(bytes(str(data), encoding= 'utf-8')))
-	else:
-		db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
-		totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData), encoding= 'utf-8'))
-	print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
-	stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-	print(stats)
+	if(not COMPRESS_PASS):
+		global totalBytes
+		global entriesInDB
+		CompressedData['Delta'] = delta
+		if ZLIB_COMPRESS:
+			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
+			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
+			totalBytes = totalBytes + sys.getsizeof(bytes(str(data), encoding= 'utf-8'))
+			print(sys.getsizeof(bytes(str(data), encoding= 'utf-8')))
+		else:
+			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
+			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData), encoding= 'utf-8'))
+		entriesInDB = entriesInDB + 1
+		print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
+		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+		print(stats)
 
 def checkThreshold(currentBase,data):
 	for attr, value in data.__dict__.items():
@@ -246,6 +253,32 @@ def copydata(data):
 				compressed[attr] = getattr(data,attr)			
 	return compressed
          
+def graphDataFromDB():
+	global entriesInDB
+	print("GRAPHING " + str(entriesInDB) + " entries:")
+	dfGraph = pd.DataFrame(columns=['TimeSeries','Air_Temperature','Wind_Speed'])
+	it = db.iterkeys()
+	it.seek_to_first()
+	i = 0
+	for k in list(it):
+		temp = json.loads(db.get(k).decode("utf-8")[2:-1])
+		dfGraph.loc[i] = [temp['rawId'],temp['temp'],temp['wind']]
+		i = i + 1
+		
+	dfGraph = dfGraph.sort_values(by=['TimeSeries'])
+	ax = plt.gca()
+	dfGraph.plot(color='blue',x='TimeSeries', y='Air_Temperature',ylim=(0,35),figsize=(25,10))
+	plt.savefig('currentData_Air.png')
+	dfGraph.plot(color='black',x='TimeSeries', y='Wind_Speed',ylim=(-1,11),figsize=(25,10))
+	# plt.show()
+	plt.savefig('currentData_Wind.png')
+	
+	# dfGraph.plot(kind='line',x='id',y='Air_Temperature',color='green',ax=ax,figsize=(25,10))
+# 	dfGraph.plot(kind='line',x='id',y='Wind_Speed',color='black',ax=ax)
+ 	
+	plt.savefig('currentData.png')
+	
+
 if __name__ == '__main__':
     app.main()
 
