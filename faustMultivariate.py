@@ -143,7 +143,7 @@ async def processCompressDataNew(cleanData):
 			CompressedData['id'] = id
 			id = id + 1
 			delta = []
-		elif ((checkThreshold(currentBase,data) and current > LIMIT/2) or current == LIMIT):
+		elif checkThreshold(currentBase,data or current == LIMIT):
 			putInDB(CompressedData,delta)
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
