@@ -133,7 +133,7 @@ async def processCleanData(rawData):
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
 	global totalBytes
-	currentBase = data = CompressedData = Point("",0,0,0,0)
+	currentBase = data = CompressedData = {}
 	current = id = 1
 	delta = []
 
