@@ -21,8 +21,8 @@ k = .9
 tMax = 20
 phi = 2
 sampleRate = 1
-SAMPLE_PASS = False
-CLEAN_PASS = False
+SAMPLE_PASS = True
+CLEAN_PASS = True
 COMPRESS_PASS = True
 ZLIB_COMPRESS = False
 THRESHOLD = 50 # %difference in the length
@@ -45,23 +45,13 @@ class Point(faust.Record, serializer='json'):
 			if attr == 'uid' or attr == 'rawId':
 				pass
 			elif attr == 'ts':
-				data[attr] = str(convertDate(getattr(self,attr)) - float(other[attr]))
+				data[attr] = str(convertDate(getattr(self,attr)) - int(other[attr]))
 			elif isinstance(value, float):
 				data[attr] = round( getattr(self,attr) - other[attr] , 2)
 			else:
 				data[attr] = getattr(self,attr) - other[attr]
 		return data
 
-class CompressedPoint(faust.Record, serializer='json'):
-	ts: str
-	temp: int
-	wind: float
-	id: int
-	delta = []
-	
-	def __init__(self):
-		pass
-		
 app = faust.App(
     'node-data',
     broker='kafka://localhost:9092',
@@ -162,9 +152,9 @@ async def processNoCompressDataNew(cleanData):
 	global totalBytes
 	global entriesInDB
 	async for data in cleanData:
-		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(str(data.dumps()), encoding= 'utf-8'))
-		print(sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8')))
-		totalBytes = totalBytes + sys.getsizeof(bytes(str(data.dumps()), encoding= 'utf-8'))
+		db.put(bytes(str(data.uid), encoding= 'utf-8'), bytes(data.dumps()))
+		print(sys.getsizeof(bytes(data.dumps())))
+		totalBytes = totalBytes + sys.getsizeof(bytes(data.dumps()))
 		entriesInDB = entriesInDB + 1
 		print(db.get(bytes(str(data.uid), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
@@ -223,12 +213,12 @@ def putInDB (CompressedData, delta):
 		CompressedData['Delta'] = delta
 		if ZLIB_COMPRESS:
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
-			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(data), encoding= 'utf-8'))
-			totalBytes = totalBytes + sys.getsizeof(bytes(str(data), encoding= 'utf-8'))
+			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
+			totalBytes = totalBytes + sys.getsizeof(bytes(data))
 			print(sys.getsizeof(bytes(str(data), encoding= 'utf-8')))
 		else:
-			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData), encoding= 'utf-8'))
-			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData), encoding= 'utf-8'))
+			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(CompressedData))
+			totalBytes = totalBytes + sys.getsizeof(bytes(data))
 		entriesInDB = entriesInDB + 1
 		print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
@@ -261,7 +251,7 @@ def graphDataFromDB():
 	it.seek_to_first()
 	i = 0
 	for k in list(it):
-		temp = json.loads(db.get(k).decode("utf-8")[2:-1])
+		temp = json.loads(db.get(k))
 		dfGraph.loc[i] = [temp['rawId'],temp['temp'],temp['wind']]
 		i = i + 1
 		
@@ -270,11 +260,8 @@ def graphDataFromDB():
 	dfGraph.plot(color='blue',x='TimeSeries', y='Air_Temperature',ylim=(0,35),figsize=(25,10))
 	plt.savefig('currentData_Air.png')
 	dfGraph.plot(color='black',x='TimeSeries', y='Wind_Speed',ylim=(-1,11),figsize=(25,10))
-	# plt.show()
 	plt.savefig('currentData_Wind.png')
 	
-	# dfGraph.plot(kind='line',x='id',y='Air_Temperature',color='green',ax=ax,figsize=(25,10))
-# 	dfGraph.plot(kind='line',x='id',y='Wind_Speed',color='black',ax=ax)
  	
 	plt.savefig('currentData.png')
 	
