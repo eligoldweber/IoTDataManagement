@@ -134,7 +134,7 @@ async def processCleanData(rawData):
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
 	global totalBytes
-	currentBase = data = CompressedData = Point("",0,0,0,0)
+	currentBase = data = CompressedData = {}
 	current = id = 1
 	delta = []
 
@@ -144,7 +144,7 @@ async def processCompressDataNew(cleanData):
 			CompressedData['id'] = id
 			id = id + 1
 			delta = []
-		elif ((checkThreshold(currentBase,data) and current > LIMIT/2) or current == LIMIT):
+		elif checkThreshold(currentBase,data or current == LIMIT):
 			putInDB(CompressedData,delta)
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
