@@ -27,7 +27,7 @@ COMPRESS_PASS = False
 ZLIB_COMPRESS = True
 GRAPH = False
 THRESHOLD = 50 # %difference in the length
-LIMIT = 20 # Upper bound for B+D
+LIMIT = 30 # Upper bound for B+D
 
 #Analysis
 totalBytes = 0
