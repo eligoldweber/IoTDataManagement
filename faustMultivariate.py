@@ -227,8 +227,8 @@ def putInDB (CompressedData, delta):
 			comprdata = comprdata + sys.getsizeof(data)
 			print("Compressed Data " + str(comprdata))
 		else:
-			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(CompressedData))
-			totalBytes = totalBytes + sys.getsizeof(bytes(data))
+			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
+			totalBytes = totalBytes + sys.getsizeof(bytes(CompressedData))
 			comprdata = comprdata + sys.getsizeof(CompressedData)
 			print("Compressed Data " + str(comprdata))
 		entriesInDB = entriesInDB + 1
