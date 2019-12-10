@@ -32,6 +32,8 @@ LIMIT = 30 # Upper bound for B+D
 #Analysis
 totalBytes = 0
 entriesInDB = 0
+nocomprdata = 0
+comprdata = 0
 
 class Point(faust.Record, serializer='json'):
 	ts: str
@@ -46,7 +48,7 @@ class Point(faust.Record, serializer='json'):
 			if attr == 'uid' or attr == 'rawId':
 				pass
 			elif attr == 'ts':
-				data[attr] = str(convertDate(getattr(self,attr)) - float(other[attr]))
+				data[attr] = str(convertDate(getattr(self,attr)) - int(other[attr]))
 			elif isinstance(value, float):
 				data[attr] = round( getattr(self,attr) - other[attr] , 2)
 			else:
@@ -125,17 +127,20 @@ async def processCleanData(rawData):
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
 	global totalBytes
+	global nocomprdata
 	currentBase = data = CompressedData = {}
 	current = id = 1
 	delta = []
 
 	async for data in cleanData:
+		nocomprdata = nocomprdata + sys.getsizeof(data)
 		if id == 1:
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
 			id = id + 1
 			delta = []
-		elif checkThreshold(currentBase,data or current == LIMIT):
+		elif checkThreshold(currentBase,data) or current == LIMIT:
+			print("clean data " + str(nocomprdata))
 			putInDB(CompressedData,delta)
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
@@ -207,21 +212,25 @@ class BackgroundService(Service):
 def convertDate (ts):
 	dt = datetime.strptime(ts,'%m/%d/%Y %I:%M:%S %p')
 	""" Return time in minutes"""
-	return dt.timestamp()/60
+	return int(dt.timestamp()/60)
 	
 def putInDB (CompressedData, delta):
 	if(not COMPRESS_PASS):
 		global totalBytes
 		global entriesInDB
+		global comprdata
 		CompressedData['Delta'] = delta
 		if ZLIB_COMPRESS:
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
-			print(sys.getsizeof(bytes(data)))
+			comprdata = comprdata + sys.getsizeof(data)
+			print("Compressed Data " + str(comprdata))
 		else:
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(CompressedData))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
+			comprdata = comprdata + sys.getsizeof(CompressedData)
+			print("Compressed Data " + str(comprdata))
 		entriesInDB = entriesInDB + 1
 		print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
@@ -271,5 +280,3 @@ def graphDataFromDB():
 
 if __name__ == '__main__':
     app.main()
-
-
