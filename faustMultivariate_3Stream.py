@@ -23,22 +23,21 @@ phi = 2
 sampleRate = 1
 SAMPLE_PASS = False
 CLEAN_PASS = False
-COMPRESS_PASS = False
+COMPRESS_PASS = True
 ZLIB_COMPRESS = False
-GRAPH = False
+GRAPH = True
 THRESHOLD = 50 # %difference in the length
-LIMIT = 30 # Upper bound for B+D
+LIMIT = 20 # Upper bound for B+D
 
 #Analysis
 totalBytes = 0
 entriesInDB = 0
-nocomprdata = 0
-comprdata = 0
 
 class Point(faust.Record, serializer='json'):
 	ts: str
 	temp: float
 	wind: float
+	pressure: float
 	rawId: int
 	uid: int
 	
@@ -48,7 +47,7 @@ class Point(faust.Record, serializer='json'):
 			if attr == 'uid' or attr == 'rawId':
 				pass
 			elif attr == 'ts':
-				data[attr] = str(convertDate(getattr(self,attr)) - int(other[attr]))
+				data[attr] = str(convertDate(getattr(self,attr)) - float(other[attr]))
 			elif isinstance(value, float):
 				data[attr] = round( getattr(self,attr) - other[attr] , 2)
 			else:
@@ -71,26 +70,30 @@ knn = KNN()
 mad = MAD()
 tempSampler = DSample(sampleRate,k,tMax,windowSize,phi)
 windSampler = DSample(sampleRate,k,tMax,windowSize,phi)
-
+pressureSampler = DSample(sampleRate,k,tMax,windowSize,phi)
 
 @app.agent(rawDataTopic)
 async def processData(rawData):
 	i = 0
 	global tempSample
 	global windSample
+	global pressureSampler
 	async for data in rawData:
 		if(SAMPLE_PASS):
 			await CleanDataTopic.send(value=data)
 		else:
 			sampledTemp = tempSampler.add_val(data.uid,data.temp)
 			sampledWind = windSampler.add_val(data.uid,data.wind)
-			if(sampledWind[0] or sampledTemp[0]):
+			sampledPressure = pressureSampler.add_val(data.uid,data.pressure)
+			
+			if(sampledWind[0] or sampledTemp[0] or sampledPressure[0]):
 				data.uid = i
 				data.temp = sampledTemp[2]
 				data.wind = sampledWind[2]
+				data.pressure = sampledPressure[2]
 				await CleanDataTopic.send(value=data)
 				i = i + 1
-				time.sleep(.005)
+				time.sleep(.0005)
 			
 
 @app.agent(CleanDataTopic)
@@ -108,7 +111,7 @@ async def processCleanData(rawData):
 		    # data is a point
     
 		    # # with KNN
-			val = [data.temp,data.wind]
+			val = [data.temp,data.wind,data.pressure]
 			knn.add_number(val)
 			if len(knn.data) < knn.k:
 				await CompressDataTopic.send(value=data)
@@ -127,20 +130,17 @@ async def processCleanData(rawData):
 @app.agent(CompressDataTopic)
 async def processCompressDataNew(cleanData):
 	global totalBytes
-	global nocomprdata
 	currentBase = data = CompressedData = {}
 	current = id = 1
 	delta = []
 
 	async for data in cleanData:
-		nocomprdata = nocomprdata + sys.getsizeof(data)
 		if id == 1:
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
 			id = id + 1
 			delta = []
-		elif checkThreshold(currentBase,data) or current == LIMIT:
-			print("clean data " + str(nocomprdata))
+		elif checkThreshold(currentBase,data or current == LIMIT):
 			putInDB(CompressedData,delta)
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
@@ -169,10 +169,10 @@ async def processNoCompressDataNew(cleanData):
 async def produce():
 	chunksize = 1
 	i = 0
-	for chunk in pd.read_csv('./dataSets/BeachMulti1000.csv', chunksize=chunksize):
-		d = Point("",0,0,0,0)
+	for chunk in pd.read_csv('./dataSets/BeachMulti1000_3Streams.csv', chunksize=chunksize):
+		# d = Point("",0,0,0,0,0)
 		for index, row in chunk.head().iterrows():
-			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['Wind Speed'],rawId=i,uid=i)
+			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['Wind Speed'],pressure=row['Barometric Pressure'],rawId=i,uid=i)
 			i = i + 1
 			await rawDataTopic.send(value=d)
 			time.sleep(.005)
@@ -212,25 +212,21 @@ class BackgroundService(Service):
 def convertDate (ts):
 	dt = datetime.strptime(ts,'%m/%d/%Y %I:%M:%S %p')
 	""" Return time in minutes"""
-	return int(dt.timestamp()/60)
+	return dt.timestamp()/60
 	
 def putInDB (CompressedData, delta):
 	if(not COMPRESS_PASS):
 		global totalBytes
 		global entriesInDB
-		global comprdata
 		CompressedData['Delta'] = delta
 		if ZLIB_COMPRESS:
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
-			comprdata = comprdata + sys.getsizeof(data)
-			print("Compressed Data " + str(comprdata))
+			print(sys.getsizeof(bytes(data)))
 		else:
-			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
-			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData),encoding= 'utf-8'))
-			comprdata = comprdata + sys.getsizeof(CompressedData)
-			print("Compressed Data " + str(comprdata))
+			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(CompressedData))
+			totalBytes = totalBytes + sys.getsizeof(bytes(data))
 		entriesInDB = entriesInDB + 1
 		print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
@@ -258,13 +254,13 @@ def copydata(data):
 def graphDataFromDB():
 	global entriesInDB
 	print("GRAPHING " + str(entriesInDB) + " entries:")
-	dfGraph = pd.DataFrame(columns=['TimeSeries','Air_Temperature','Wind_Speed'])
+	dfGraph = pd.DataFrame(columns=['TimeSeries','Air_Temperature','Wind_Speed','Barometric_Pressure'])
 	it = db.iterkeys()
 	it.seek_to_first()
 	i = 0
 	for k in list(it):
 		temp = json.loads(db.get(k))
-		dfGraph.loc[i] = [temp['rawId'],temp['temp'],temp['wind']]
+		dfGraph.loc[i] = [temp['rawId'],temp['temp'],temp['wind'],temp['pressure']]
 		i = i + 1
 		
 	dfGraph = dfGraph.sort_values(by=['TimeSeries'])
@@ -273,6 +269,8 @@ def graphDataFromDB():
 	plt.savefig('currentData_Air.png')
 	dfGraph.plot(color='black',x='TimeSeries', y='Wind_Speed',ylim=(-1,11),figsize=(25,10))
 	plt.savefig('currentData_Wind.png')
+	dfGraph.plot(color='green',x='TimeSeries', y='Barometric_Pressure',figsize=(25,10))
+	plt.savefig('currentData_Pressure.png')
 	
  	
 	plt.savefig('currentData.png')
@@ -280,3 +278,5 @@ def graphDataFromDB():
 
 if __name__ == '__main__':
     app.main()
+
+
