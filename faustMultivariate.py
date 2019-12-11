@@ -34,6 +34,7 @@ totalBytes = 0
 entriesInDB = 0
 nocomprdata = 0
 comprdata = 0
+comprdatanozlib = 0
 
 class Point(faust.Record, serializer='json'):
 	ts: str
@@ -220,6 +221,7 @@ def putInDB (CompressedData, delta):
 		global entriesInDB
 		global dbentry
 		global comprdata
+		global comprdatanozlib
 		CompressedData['Delta'] = delta
 		if ZLIB_COMPRESS:
 			print('currernt entry before zlib ' + str(sys.getsizeof(CompressedData)))
@@ -227,9 +229,11 @@ def putInDB (CompressedData, delta):
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
 			comprdata = comprdata + sys.getsizeof(data)
+			comprdatanozlib = comprdatanozlib + (sys.getsizeof(CompressedData))
 			#print("Compressed Data " + str(comprdata))
 			print('currernt entry with zlib ' + str(sys.getsizeof(data)))
-			print('comprdata ' + str(comprdata))
+			print('compressed data with zlib ' + str(comprdata))
+			print('compressed data without zlib ' + str(comprdatanozlib))
 		else:
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
 			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData),encoding= 'utf-8'))
