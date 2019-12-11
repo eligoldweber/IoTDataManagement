@@ -24,7 +24,7 @@ sampleRate = 1
 SAMPLE_PASS = False
 CLEAN_PASS = False
 COMPRESS_PASS = False
-ZLIB_COMPRESS = False
+ZLIB_COMPRESS = True
 GRAPH = False
 THRESHOLD = 50 # %difference in the length
 LIMIT = 30 # Upper bound for B+D
@@ -139,7 +139,7 @@ async def processCompressDataNew(cleanData):
 			CompressedData['id'] = id
 			id = id + 1
 			delta = []
-		elif checkThreshold(currentBase,data) or current == LIMIT:
+		elif checkThreshold(currentBase,data) or current == LIMIT or sizecheck(currentBase,delta):
 			print("clean data " + str(nocomprdata))
 			putInDB(CompressedData,delta)
 			CompressedData = currentBase = copydata(data)				
@@ -169,7 +169,7 @@ async def processNoCompressDataNew(cleanData):
 async def produce():
 	chunksize = 1
 	i = 0
-	for chunk in pd.read_csv('./dataSets/BeachMulti1000.csv', chunksize=chunksize):
+	for chunk in pd.read_csv('./dataSets/BeachMulti1000_3Streams.csv', chunksize=chunksize):
 		d = Point("",0,0,0,0)
 		for index, row in chunk.head().iterrows():
 			d = Point(ts=row['Measurement Timestamp'],temp=row['Air Temperature'],wind=row['Wind Speed'],rawId=i,uid=i)
@@ -218,23 +218,28 @@ def putInDB (CompressedData, delta):
 	if(not COMPRESS_PASS):
 		global totalBytes
 		global entriesInDB
+		global dbentry
 		global comprdata
 		CompressedData['Delta'] = delta
 		if ZLIB_COMPRESS:
+			print('currernt entry before zlib ' + str(sys.getsizeof(CompressedData)))
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
 			comprdata = comprdata + sys.getsizeof(data)
-			print("Compressed Data " + str(comprdata))
+			#print("Compressed Data " + str(comprdata))
+			print('currernt entry with zlib ' + str(sys.getsizeof(data)))
+			print('comprdata ' + str(comprdata))
 		else:
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
 			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData),encoding= 'utf-8'))
 			comprdata = comprdata + sys.getsizeof(CompressedData)
-			print("Compressed Data " + str(comprdata))
+			#print("Compressed Data " + str(comprdata))
 		entriesInDB = entriesInDB + 1
-		print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
+		print(entriesInDB)
+		#print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
 		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
-		print(stats)
+		#print(stats)
 
 def checkThreshold(currentBase,data):
 	for attr, value in data.__dict__.items():
@@ -277,6 +282,13 @@ def graphDataFromDB():
  	
 	plt.savefig('currentData.png')
 	
+def sizecheck(currentBase, delta):
+	x = currentBase
+	x['Delta'] = delta
+	if(sys.getsizeof(x) > 255):
+		return True
+	else:
+		return False
 
 if __name__ == '__main__':
     app.main()
