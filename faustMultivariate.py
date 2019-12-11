@@ -281,11 +281,17 @@ def copydata(data):
 	return compressed
         
 def sizecheck(CompressedData):
-	tmp = zlib.compress(str(CompressedData).encode('utf-8'), 2)
-	if sys.getsizeof(tmp) > 255: 
-		return True
+	if ZLIB_COMPRESS:
+		tmp = zlib.compress(str(CompressedData).encode('utf-8'), 2)
+		if sys.getsizeof(tmp) > 255: 
+			return True
+		else:
+			return False
 	else:
-		return False
+		if sys.getsizeof(str(tmp)) > 255: 
+			return True
+		else:
+			return False
 
 def graphDataFromDB():
 	global entriesInDB
