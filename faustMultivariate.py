@@ -144,7 +144,7 @@ async def processCompressDataNew(cleanData):
 				if attr != 'uid' and attr != 'rawId':
 					delta[attr] = []
 			CompressedData['D'] = delta
-		elif checkThreshold(currentBase,data) or current == LIMIT or sys.getsizeof(str(CompressedData)) > 255:
+		elif checkThreshold(currentBase,data) or current == LIMIT or sizecheck(CompressedData):
 			print("clean data " + str(nocomprdata))
 			print('number of entries' + str(current))
 			putInDB(CompressedData)
@@ -279,7 +279,14 @@ def copydata(data):
 			else:	
 				compressed[attr] = getattr(data,attr)			
 	return compressed
-         
+        
+def sizecheck(CompressedData):
+	tmp = zlib.compress(str(CompressedData).encode('utf-8'), 2)
+	if sys.getsizeof(tmp) > 255: 
+		return True
+	else:
+		return False
+
 def graphDataFromDB():
 	global entriesInDB
 	print("GRAPHING " + str(entriesInDB) + " entries:")
