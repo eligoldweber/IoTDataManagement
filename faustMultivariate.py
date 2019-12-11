@@ -288,7 +288,7 @@ def sizecheck(CompressedData):
 		else:
 			return False
 	else:
-		if sys.getsizeof(str(tmp)) > 255: 
+		if sys.getsizeof(str(CompressedData)) > 255: 
 			return True
 		else:
 			return False
