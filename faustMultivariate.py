@@ -131,7 +131,7 @@ async def processCompressDataNew(cleanData):
 	global nocomprdata
 	currentBase = data = CompressedData = {}
 	current = id = 1
-	delta = []
+	delta = {}
 
 	async for data in cleanData:
 		nocomprdata = nocomprdata + sys.getsizeof(data)
@@ -139,20 +139,34 @@ async def processCompressDataNew(cleanData):
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
 			id = id + 1
-			delta = []
-		elif checkThreshold(currentBase,data) or current == LIMIT or sizecheck(currentBase,delta):
+			delta = {}
+			for attr, value in data.__dict__.items():
+				if attr != 'uid' and attr != 'rawId':
+					delta[attr] = []
+			CompressedData['D'] = delta
+		elif checkThreshold(currentBase,data) or current == LIMIT or sys.getsizeof(CompressedData) > 255:
 			print("clean data " + str(nocomprdata))
-			putInDB(CompressedData,delta)
+			print('number of entries' + str(current))
+			putInDB(CompressedData)
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
 			id = id + 1
-			delta = []
+			delta = {}
+			for attr, value in data.__dict__.items():
+				if attr != 'uid' and attr != 'rawId':
+					delta[attr] = []
+			CompressedData['D'] = delta
 			current = 1
 		else:
-			delta.append(data-currentBase)
+			tmp = data-currentBase
+			for attr, value in data.__dict__.items():
+				if attr != 'uid' and attr != 'rawId':
+					delta[attr].append(tmp[attr])
+			CompressedData['D'] = {}
+			CompressedData['D'] = delta
 			current = current + 1
 
-	putInDB(CompressedData,delta)
+	putInDB(CompressedData)
 		
 @app.agent(NoCompressDataTopic)
 async def processNoCompressDataNew(cleanData):
@@ -215,15 +229,16 @@ def convertDate (ts):
 	""" Return time in minutes"""
 	return int(dt.timestamp()/60)
 	
-def putInDB (CompressedData, delta):
+def putInDB (CompressedData):
 	if(not COMPRESS_PASS):
 		global totalBytes
 		global entriesInDB
 		global dbentry
 		global comprdata
 		global comprdatanozlib
-		CompressedData['Delta'] = delta
+		#CompressedData['Delta'] = delta
 		if ZLIB_COMPRESS:
+			print(CompressedData)
 			print('currernt entry before zlib ' + str(sys.getsizeof(CompressedData)))
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
@@ -238,7 +253,7 @@ def putInDB (CompressedData, delta):
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
 			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData),encoding= 'utf-8'))
 			comprdata = comprdata + sys.getsizeof(CompressedData)
-			#print("Compressed Data " + str(comprdata))
+			print("Compressed Data " + str(comprdata))
 		entriesInDB = entriesInDB + 1
 		print(entriesInDB)
 		#print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
@@ -285,14 +300,6 @@ def graphDataFromDB():
 	
  	
 	plt.savefig('currentData.png')
-	
-def sizecheck(currentBase, delta):
-	x = currentBase
-	x['Delta'] = delta
-	if(sys.getsizeof(x) > 255):
-		return True
-	else:
-		return False
 
 if __name__ == '__main__':
     app.main()
