@@ -144,7 +144,7 @@ async def processCompressDataNew(cleanData):
 				if attr != 'uid' and attr != 'rawId':
 					delta[attr] = []
 			CompressedData['D'] = delta
-		elif checkThreshold(currentBase,data) or current == LIMIT or sys.getsizeof(CompressedData) > 255:
+		elif checkThreshold(currentBase,data) or current == LIMIT or sys.getsizeof(str(CompressedData)) > 255:
 			print("clean data " + str(nocomprdata))
 			print('number of entries' + str(current))
 			putInDB(CompressedData)
@@ -244,8 +244,9 @@ def putInDB (CompressedData):
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
 			totalBytes = totalBytes + sys.getsizeof(bytes(data))
 			comprdata = comprdata + sys.getsizeof(data)
-			comprdatanozlib = comprdatanozlib + (sys.getsizeof(CompressedData))
-			#print("Compressed Data " + str(comprdata))
+			comprdatanozlib = comprdatanozlib + (sys.getsizeof(str(CompressedData)))
+			print("comprdata " + str(comprdata))
+			print("totalBytes " + str(totalBytes))
 			print('currernt entry with zlib ' + str(sys.getsizeof(data)))
 			print('compressed data with zlib ' + str(comprdata))
 			print('compressed data without zlib ' + str(comprdatanozlib))
