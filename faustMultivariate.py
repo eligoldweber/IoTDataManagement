@@ -24,7 +24,7 @@ sampleRate = 1
 SAMPLE_PASS = False
 CLEAN_PASS = False
 COMPRESS_PASS = False
-ZLIB_COMPRESS = True
+ZLIB_COMPRESS = False
 GRAPH = False
 THRESHOLD = 50 # %difference in the length
 LIMIT = 30 # Upper bound for B+D
@@ -252,9 +252,9 @@ def putInDB (CompressedData):
 			print('compressed data without zlib ' + str(comprdatanozlib))
 		else:
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
-			totalBytes = totalBytes + sys.getsizeof(bytes(str(CompressedData),encoding= 'utf-8'))
+			totalBytes = totalBytes + sys.getsizeof(str(CompressedData))
 			comprdata = comprdata + sys.getsizeof(CompressedData)
-			print("Compressed Data " + str(comprdata))
+			print("Compressed Data " + str(totalBytes))
 		entriesInDB = entriesInDB + 1
 		print(entriesInDB)
 		#print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
@@ -267,6 +267,7 @@ def checkThreshold(currentBase,data):
 		#if attr != 'uid' and attr != 'rawId':
 		if attr == 'ts':
 			if len(str(delta[attr])) > (THRESHOLD/100) * len(str(currentBase[attr])):
+				#print('true here')
 				return True
 	return False
    
