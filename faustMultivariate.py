@@ -24,11 +24,11 @@ sampleRate = 1
 SAMPLE_PASS = False
 CLEAN_PASS = False
 COMPRESS_PASS = False
-ZLIB_COMPRESS = False
+ZLIB_COMPRESS = True
 GRAPH = False
 THRESHOLD = 50 # %difference in the length
 LIMIT = 30 # Upper bound for B+D
-
+TT = 0
 #Analysis
 totalBytes = 0
 entriesInDB = 0
@@ -132,7 +132,7 @@ async def processCompressDataNew(cleanData):
 	currentBase = data = CompressedData = {}
 	current = id = 1
 	delta = {}
-
+	global TT
 	async for data in cleanData:
 		nocomprdata = nocomprdata + sys.getsizeof(data)
 		if id == 1:
@@ -144,10 +144,9 @@ async def processCompressDataNew(cleanData):
 				if attr != 'uid' and attr != 'rawId':
 					delta[attr] = []
 			CompressedData['D'] = delta
+			TT = time.time()
 		elif checkThreshold(currentBase,data) or current == LIMIT or sizecheck(CompressedData):
-			print("clean data " + str(nocomprdata))
-			print('number of entries' + str(current))
-			putInDB(CompressedData)
+			putInDB(CompressedData,current)
 			CompressedData = currentBase = copydata(data)				
 			CompressedData['id'] = id
 			id = id + 1
@@ -166,7 +165,7 @@ async def processCompressDataNew(cleanData):
 			CompressedData['D'] = delta
 			current = current + 1
 
-	putInDB(CompressedData)
+	putInDB(CompressedData,current)
 		
 @app.agent(NoCompressDataTopic)
 async def processNoCompressDataNew(cleanData):
@@ -229,36 +228,23 @@ def convertDate (ts):
 	""" Return time in minutes"""
 	return int(dt.timestamp()/60)
 	
-def putInDB (CompressedData):
+c = 0
+def putInDB (CompressedData,current):
 	if(not COMPRESS_PASS):
 		global totalBytes
 		global entriesInDB
-		global dbentry
-		global comprdata
-		global comprdatanozlib
-		#CompressedData['Delta'] = delta
+		global TT
+		global c
 		if ZLIB_COMPRESS:
-			print(CompressedData)
-			print('currernt entry before zlib ' + str(sys.getsizeof(CompressedData)))
 			data = zlib.compress(str(CompressedData).encode('utf-8'), 2)
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(data))
-			totalBytes = totalBytes + sys.getsizeof(bytes(data))
-			comprdata = comprdata + sys.getsizeof(data)
-			comprdatanozlib = comprdatanozlib + (sys.getsizeof(str(CompressedData)))
-			print("comprdata " + str(comprdata))
-			print("totalBytes " + str(totalBytes))
-			print('currernt entry with zlib ' + str(sys.getsizeof(data)))
-			print('compressed data with zlib ' + str(comprdata))
-			print('compressed data without zlib ' + str(comprdatanozlib))
 		else:
 			db.put(bytes(str(CompressedData['id']), encoding= 'utf-8'), bytes(str(CompressedData),encoding= 'utf-8'))
-			totalBytes = totalBytes + sys.getsizeof(str(CompressedData))
-			comprdata = comprdata + sys.getsizeof(CompressedData)
-			print("Compressed Data " + str(totalBytes))
+
 		entriesInDB = entriesInDB + 1
-		print(entriesInDB)
-		#print(db.get(bytes(str(CompressedData['id']), encoding= 'utf-8')))
-		stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
+		c = c + current
+		print(str(c) + ' ' + str(time.time() - TT))
+		#stats = "[MONITOR] average runtime events: "+ str(app.monitor.events_runtime_avg)
 		#print(stats)
 
 def checkThreshold(currentBase,data):
@@ -267,7 +253,6 @@ def checkThreshold(currentBase,data):
 		#if attr != 'uid' and attr != 'rawId':
 		if attr == 'ts':
 			if len(str(delta[attr])) > (THRESHOLD/100) * len(str(currentBase[attr])):
-				#print('true here')
 				return True
 	return False
    
